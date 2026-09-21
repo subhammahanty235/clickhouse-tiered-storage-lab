@@ -1,0 +1,60 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Raw object storage. Holds every byte of column data for any
+                 table using the s3_only policy. -->
+            <s3_raw>
+                <type>s3</type>
+                <endpoint from_env="S3_ENDPOINT"/>
+                <use_environment_credentials>true</use_environment_credentials>
+                <!-- Local sidecar holding ONLY the part->object key map.
+                     Tiny; lives on the ch-data named volume so metadata
+                     survives `docker compose restart` / `down && up`. -->
+                <metadata_path>/var/lib/clickhouse/disks/s3_raw/</metadata_path>
+                <!-- Single node: no replicas to coordinate object lifetime with. -->
+                <send_metadata>false</send_metadata>
+                <skip_access_check>false</skip_access_check>
+            </s3_raw>
+
+            <!-- Read-through cache wrapping s3_raw. Tables address THIS disk;
+                 misses fall through to S3. -->
+            <s3_cached>
+                <type>cache</type>
+                <disk>s3_raw</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <!-- Spec called for 10Gi. On this host that does not fit:
+                     events_local (5.45 GiB) + MinIO's copy of events_s3
+                     (5.45 GiB) + a 10 GiB cache exceeds the volume, and the
+                     first full scan filled the disk and wedged the daemon.
+                     2Gi still shows cold-vs-warm clearly for the selective
+                     queries; for the full scans it demonstrates a cache
+                     smaller than the working set, which is the realistic
+                     case for S3-backed storage anyway.
+                     Raise to 10Gi on a host with room. -->
+                <max_size>2Gi</max_size>
+                <!-- Do not populate on INSERT: keeps "cold" genuinely cold for
+                     the benchmark, and keeps the cache off the disk budget
+                     during the 100M-row load. -->
+                <cache_on_write_operations>false</cache_on_write_operations>
+            </s3_cached>
+        </disks>
+
+        <policies>
+            <!-- ONE volume, ONE disk. There is no local tier to fall back to,
+                 so a part either lands in S3 or the INSERT fails. -->
+            <s3_only>
+                <volumes>
+                    <main>
+                        <disk>s3_cached</disk>
+                    </main>
+                </volumes>
+            </s3_only>
+        </policies>
+    </storage_configuration>
+
+    <!-- Single node, so zero-copy replication is irrelevant; pinned off
+         explicitly so it can never be inherited from a default. -->
+    <merge_tree>
+        <allow_remote_fs_zero_copy_replication>0</allow_remote_fs_zero_copy_replication>
+    </merge_tree>
+</clickhouse>

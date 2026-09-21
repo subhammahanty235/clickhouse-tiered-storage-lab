@@ -1,0 +1,30 @@
+<clickhouse>
+    <!-- This lab runs in an 8 GiB Docker VM shared with MinIO. ClickHouse
+         defaults to claiming ~90% of host RAM, leaving nothing for the object
+         store; a bulk load with concurrent S3 merges then gets the server
+         OOM-killed by the kernel (exit 137). Capping server memory converts
+         that into a normal, recoverable query-level error instead.
+         On a host with dedicated RAM, raise or remove these. -->
+    <max_server_memory_usage>5800000000</max_server_memory_usage>   <!-- 5.8 GB -->
+    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
+
+    <!-- NOTE: do not shrink <background_pool_size> here. Several merge_tree
+         settings (number_of_free_entries_in_pool_to_execute_mutation = 20,
+         ..._to_execute_optimize_entire_partition = 25) must stay below
+         background_pool_size * background_merges_mutations_concurrency_ratio,
+         and the server refuses to start (BAD_ARGUMENTS, exit 36) if they
+         aren't. The memory caps above are what actually bound peak usage. -->
+
+    <profiles>
+        <default>
+            <max_memory_usage>3500000000</max_memory_usage>   <!-- 3.5 GB per query -->
+            <!-- Spill to disk rather than die on the wide/high-cardinality
+                 aggregates in the benchmark. -->
+            <max_bytes_before_external_group_by>1500000000</max_bytes_before_external_group_by>
+            <max_bytes_before_external_sort>1500000000</max_bytes_before_external_sort>
+            <!-- Smaller INSERT blocks => lower peak during the bulk load. -->
+            <max_insert_block_size>524288</max_insert_block_size>
+            <min_insert_block_size_rows>524288</min_insert_block_size_rows>
+        </default>
+    </profiles>
+</clickhouse>

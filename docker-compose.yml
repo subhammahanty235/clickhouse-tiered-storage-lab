@@ -1,0 +1,78 @@
+name: ch-s3-lab
+
+services:
+  # S3-compatible object store standing in for AWS S3.
+  # Swap S3_ENDPOINT in .env to point clickhouse at real S3 instead; nothing
+  # else in this lab changes.
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:?set in .env}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:?set in .env}
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # console
+    volumes:
+      - minio-data-v2:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # Creates the bucket once, then exits.
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set lab http://minio:9000 $$AWS_ACCESS_KEY_ID $$AWS_SECRET_ACCESS_KEY &&
+      mc mb --ignore-existing lab/ch-s3-lab &&
+      echo 'bucket ch-s3-lab ready'
+      "
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8.33.6
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      # Consumed by <use_environment_credentials>true</use_environment_credentials>
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?set in .env}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?set in .env}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      # Substituted into config.d/s3.xml via from_env
+      S3_ENDPOINT: ${S3_ENDPOINT:?set in .env}
+    ports:
+      - "8123:8123"   # HTTP
+      - "9002:9000"   # native (9000 is taken by minio)
+    volumes:
+      - ./config.d:/etc/clickhouse-server/config.d:ro
+      - ./sql:/sql:ro
+      - ch-data-v2:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  # v2: the original volumes were corrupted by an out-of-disk event (ext4
+  # entries raising EBADMSG "bad message" -- ClickHouse refused to boot and
+  # MinIO failed every PutObject). The damage is not repairable from
+  # userspace, so the lab uses fresh volumes. The originals are left in
+  # place rather than deleted; remove them with
+  #   docker volume rm ch-s3-lab_minio-data ch-s3-lab_ch-data
+  minio-data-v2:
+  ch-data-v2:

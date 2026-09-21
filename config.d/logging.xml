@@ -1,0 +1,10 @@
+<clickhouse>
+    <!-- query_log must be flushed promptly: bench.sh reads ProfileEvents
+         immediately after each query. -->
+    <query_log>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </query_log>
+    <logger>
+        <level>information</level>
+    </logger>
+</clickhouse>

@@ -1,0 +1,22 @@
+<clickhouse>
+    <storage_configuration>
+        <policies>
+            <!-- The production pattern: ONE table spanning two tiers.
+                 Volume order matters. Inserts land in the first volume
+                 (hot), and parts age down to the next (cold) via TTL or an
+                 explicit MOVE. A part always lives entirely on one disk;
+                 the split happens at part granularity, never inside a part. -->
+            <tiered>
+                <volumes>
+                    <hot>
+                        <disk>default</disk>
+                        <move_factor>0.2</move_factor>
+                    </hot>
+                    <cold>
+                        <disk>s3_cached</disk>
+                    </cold>
+                </volumes>
+            </tiered>
+        </policies>
+    </storage_configuration>
+</clickhouse>
