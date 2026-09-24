@@ -275,6 +275,11 @@ large, size the cache to the working set.
 See [RESULTS.md](RESULTS.md) for full measurements and the seven configuration
 problems hit along the way, with causes and fixes.
 
+See [REQUEST-COSTS.md](REQUEST-COSTS.md) for per-phase `DiskS3*` request
+accounting: what the TTL migration costs ($0.031/GB), what background merge
+churn costs on an idle cold tier (zero, if it is merged), what a late-arriving
+row costs (13 PUTs), and what `prefer_not_to_merge` is actually worth.
+
 ---
 
 ## Layout
@@ -290,4 +295,7 @@ scripts/verify.sh        prove S3-only, object counts, size histogram, restart
 scripts/bench.sh         Q1-Q5 x local/cold/warm, pulls ProfileEvents
 scripts/costs.sh         storage + request extrapolation
 scripts/teardown.sh      stop containers, optionally delete the S3 prefix
+scripts/s3_counters.sh   snapshot / diff DiskS3* request counters
+scripts/tiering_experiment.sh   phased request-cost run (load, TTL, soak, read)
+scripts/prefer_not_to_merge_test.sh   A/B for the cold-volume merge setting
 ```

@@ -14,6 +14,11 @@
                     </hot>
                     <cold>
                         <disk>s3_cached</disk>
+                        <!-- Suppress background merges on the cold tier.
+                             Merging cold parts rewrites them through S3:
+                             every merged part is re-PUT as a fresh set of
+                             objects and the originals deleted. -->
+                        <prefer_not_to_merge>true</prefer_not_to_merge>
                     </cold>
                 </volumes>
             </tiered>
